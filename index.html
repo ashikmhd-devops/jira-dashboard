@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jira Kanban Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="config.js"></script>
+  <script src="api.js"></script>
+  <script src="metrics.js"></script>
+  <style>
+    :root {
+      --bg: #0d0f14;
+      --surface: #13161e;
+      --surface2: #1a1e28;
+      --border: rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.12);
+      --text: #e8eaf0;
+      --text2: #7c8394;
+      --text3: #4a5060;
+      --accent: #4f8ef7;
+      --accent2: #6366f1;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --red: #f87171;
+      --purple: #a78bfa;
+      --teal: #2dd4bf;
+      --font: 'Syne', sans-serif;
+      --mono: 'DM Mono', monospace;
+      --r: 8px;
+      --r2: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px;
+      border-bottom: 0.5px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .logo {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 600; color: #fff;
+    }
+    .header h1 { font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+    .header .sub { font-size: 11px; color: var(--text2); margin-top: 1px; font-family: var(--mono); }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 0.5px solid var(--border2);
+      color: var(--text2);
+    }
+    .badge.live { border-color: var(--green); color: var(--green); }
+    .badge.live::before { content: '●  '; font-size: 8px; }
+    .btn-refresh {
+      background: var(--surface2);
+      border: 0.5px solid var(--border2);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: var(--r);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-refresh:hover { background: var(--surface); }
+
+    /* ── LAYOUT ── */
+    .main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
+
+    /* ── LOADING / ERROR ── */
+    .state-screen {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 60vh; gap: 16px; text-align: center;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 2px solid var(--border2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .state-screen p { color: var(--text2); font-size: 13px; }
+    .state-screen .err-title { font-size: 16px; color: var(--text); font-weight: 500; }
+    .state-screen code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--surface2);
+      padding: 12px 18px;
+      border-radius: var(--r);
+      color: var(--text2);
+      border: 0.5px solid var(--border);
+      text-align: left;
+      max-width: 480px;
+      line-height: 1.7;
+    }
+
+    /* ── KPI STRIP ── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .kpi {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r2);
+      padding: 18px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi.clickable { cursor: pointer; }
+    .kpi.clickable:hover { border-color: var(--border2); }
+    .kpi::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      border-radius: 2px 2px 0 0;
+    }
+    .kpi.accent::before { background: var(--accent); }
+    .kpi.purple::before { background: var(--purple); }
+    .kpi.red::before { background: var(--red); }
+    .kpi.green::before { background: var(--green); }
+    .kpi .label {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+    .kpi .val {
+      font-size: 32px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .kpi .delta {
+      font-size: 11px;
+      margin-top: 6px;
+      font-family: var(--mono);
+    }
+    .delta-up { color: var(--green); }
+    .delta-warn { color: var(--amber); }
+    .delta-bad { color: var(--red); }
+    .delta-neutral { color: var(--text2); }
+
+    /* ── SECTION TITLE ── */
+    .section-label {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+    }
+
+    /* ── KANBAN BOARD ── */
+    .board {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 22px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .col {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r2);
+      padding: 14px;
+      min-width: 180px;
+    }
+    .col-header {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .col-name {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+    .col-count {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: var(--surface2);
+      color: var(--text2);
+      border: 0.5px solid var(--border);
+    }
+    .col-count.over { background: rgba(248,113,113,0.1); color: var(--red); border-color: rgba(248,113,113,0.3); }
+    .ticket {
+      background: var(--surface2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r);
+      padding: 10px 11px;
+      margin-bottom: 8px;
+      cursor: default;
+      transition: border-color 0.15s;
+    }
+    .ticket:hover { border-color: var(--border2); }
+    .ticket.blocked {
+      border-left: 2px solid var(--red);
+      border-radius: 0 var(--r) var(--r) 0;
+    }
+    .ticket-id {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text3);
+      margin-bottom: 4px;
+    }
+    .ticket-id.blocked-tag { color: var(--red); }
+    .ticket-title {
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.45;
+      margin-bottom: 8px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .ticket-meta { display: flex; align-items: center; justify-content: space-between; }
+    .prio {
+      font-family: var(--mono);
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .prio-Critical { background: rgba(248,113,113,0.15); color: var(--red); }
+    .prio-High { background: rgba(251,191,36,0.12); color: var(--amber); }
+    .prio-Medium { background: rgba(79,142,247,0.12); color: var(--accent); }
+    .prio-Low { background: rgba(124,131,148,0.12); color: var(--text2); }
+    .ticket-age {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text3);
+    }
+    .ticket-age.stale { color: var(--amber); }
+    .ticket-age.very-stale { color: var(--red); }
+    .more-tickets {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      text-align: center;
+      padding: 6px;
+      border: 0.5px dashed var(--border);
+      border-radius: var(--r);
+    }
+
+    /* ── CHARTS GRID ── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .chart-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r2);
+      padding: 18px 20px;
+    }
+    .chart-title {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 14px;
+    }
+
+    /* ── AGING BARS ── */
+    .aging-row {
+      display: flex; align-items: center;
+      gap: 10px; margin-bottom: 9px;
+    }
+    .aging-id {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text2);
+      width: 70px;
+      flex-shrink: 0;
+    }
+    .aging-bar-track {
+      flex: 1;
+      background: var(--surface2);
+      border-radius: 3px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .aging-bar-fill { height: 100%; border-radius: 3px; }
+    .aging-days {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text2);
+      width: 28px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ── PRIO CHART ROW ── */
+    .prio-wrap { display: flex; align-items: center; gap: 20px; }
+    .lead-stats { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .lead-pill {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text2);
+      border: 0.5px solid var(--border2);
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: var(--surface2);
+    }
+    .prio-legend { display: flex; flex-direction: column; gap: 8px; }
+    .prio-legend-item { display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 10px; color: var(--text2); }
+    .prio-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ── INSIGHTS ── */
+    .insights-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r2);
+      padding: 18px 20px;
+      margin-bottom: 22px;
+    }
+    .insight-item {
+      display: flex; align-items: flex-start;
+      gap: 10px; padding: 10px 0;
+      border-bottom: 0.5px solid var(--border);
+    }
+    .insight-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .insight-item:first-child { padding-top: 0; }
+    .insight-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%; flex-shrink: 0;
+      margin-top: 5px;
+    }
+    .insight-text { font-size: 13px; color: var(--text); line-height: 1.55; }
+
+    /* ── TABLE ── */
+    .table-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--r2);
+      overflow: hidden;
+      margin-bottom: 32px;
+    }
+    .table-header {
+      padding: 14px 20px;
+      border-bottom: 0.5px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .table-filters { display: flex; align-items: center; gap: 8px; }
+    select {
+      background: var(--surface2);
+      border: 0.5px solid var(--border2);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: var(--r);
+      cursor: pointer;
+      outline: none;
+    }
+    select:focus { border-color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { border-bottom: 0.5px solid var(--border); }
+    th {
+      text-align: left;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 10px 20px;
+      font-weight: 400;
+    }
+    td {
+      padding: 10px 20px;
+      border-bottom: 0.5px solid var(--border);
+      font-size: 12px;
+      color: var(--text);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .td-id { font-family: var(--mono); font-size: 10px; color: var(--text2); }
+    .td-title { color: var(--text); max-width: 320px; }
+    .status-pill {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 9px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+    .pill-todo { background: rgba(124,131,148,0.1); color: var(--text2); }
+    .pill-progress { background: rgba(79,142,247,0.1); color: var(--accent); }
+    .pill-review { background: rgba(167,139,250,0.1); color: var(--purple); }
+    .pill-done { background: rgba(52,211,153,0.1); color: var(--green); }
+    .pill-blocked { background: rgba(248,113,113,0.1); color: var(--red); }
+    .pill-backlog { background: rgba(124,131,148,0.07); color: var(--text3); }
+
+    .footer {
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      padding: 16px;
+      border-top: 0.5px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">K</div>
+    <div>
+      <div class="h1" style="font-size:15px;font-weight:500;">Kanban Dashboard</div>
+      <div class="sub" id="headerSub">Loading...</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="badge" id="statusBadge">Connecting</span>
+    <button class="btn-refresh" onclick="loadData()">↻ Refresh</button>
+  </div>
+</header>
+
+<!-- ── MAIN ── -->
+<main class="main" id="main">
+  <div class="state-screen" id="loadingScreen">
+    <div class="spinner"></div>
+    <p>Fetching your Jira tickets...</p>
+  </div>
+</main>
+
+<footer class="footer" id="footer" style="display:none;">
+  Dashboard · Jira Kanban · Data via Atlassian REST API
+</footer>
+
+<script>
+// ── COLOUR HELPERS ──
+const PRIO_COLORS = {
+  Critical: '#f87171',
+  High: '#fbbf24',
+  Medium: '#4f8ef7',
+  Low: '#7c8394',
+};
+
+function agingColor(days) {
+  if (days >= 14) return '#f87171';
+  if (days >= 7)  return '#fbbf24';
+  return '#4f8ef7';
+}
+
+function agingClass(days) {
+  if (days >= 14) return 'very-stale';
+  if (days >= 7)  return 'stale';
+  return '';
+}
+
+function statusPillClass(col) {
+  const c = col.toLowerCase();
+  if (c.includes('block'))    return 'pill-blocked';
+  if (c.includes('done') || c.includes('complete')) return 'pill-done';
+  if (c.includes('progress')) return 'pill-progress';
+  if (c.includes('review'))   return 'pill-review';
+  if (c.includes('to do') || c.includes('todo')) return 'pill-todo';
+  return 'pill-backlog';
+}
+
+// ── RENDER LOADING / ERROR ──
+function showError(msg, hint) {
+  document.getElementById('statusBadge').textContent = 'Error';
+  document.getElementById('statusBadge').className = 'badge';
+  document.getElementById('main').innerHTML = `
+    <div class="state-screen">
+      <div class="err-title">Could not load data</div>
+      <p>${msg}</p>
+      ${hint ? `<code>${hint}</code>` : ''}
+    </div>`;
+}
+
+// ── RENDER KPI ──
+function renderKpis(k) {
+  const doneChange = k.donePrevMonth > 0
+    ? ((k.doneThisMonth - k.donePrevMonth) >= 0
+        ? `<span class="delta-up">+${k.doneThisMonth - k.donePrevMonth} vs last month</span>`
+        : `<span class="delta-bad">${k.doneThisMonth - k.donePrevMonth} vs last month</span>`)
+    : `<span class="delta-neutral">first month on record</span>`;
+  const yearlyChange = k.donePrevYear > 0
+    ? ((k.doneThisYear - k.donePrevYear) >= 0
+        ? `<span class="delta-up">${k.doneThisYear} this year vs ${k.donePrevYear} last year</span>`
+        : `<span class="delta-bad">${k.doneThisYear} this year vs ${k.donePrevYear} last year</span>`)
+    : `<span class="delta-neutral">${k.doneThisYear} this year · no last-year baseline</span>`;
+
+  return `
+  <div class="kpi-row">
+    <div class="kpi accent clickable" onclick="applyKpiDrilldown('open')" title="Show all open tickets">
+      <div class="label">Open tickets</div>
+      <div class="val">${k.totalOpen}</div>
+      <div class="delta"><span class="delta-neutral">across all columns</span></div>
+    </div>
+    <div class="kpi purple clickable" onclick="applyKpiDrilldown('inProgress')" title="Filter table to In Progress">
+      <div class="label">In progress</div>
+      <div class="val">${k.inProgress}</div>
+      <div class="delta">${k.wipOverLimit
+        ? `<span class="delta-bad">over WIP limit (${CONFIG.wipLimit})</span>`
+        : CONFIG.wipLimit > 0
+          ? `<span class="delta-up">within limit (${CONFIG.wipLimit})</span>`
+          : `<span class="delta-neutral">no WIP limit set</span>`
+      }</div>
+    </div>
+    <div class="kpi red clickable" onclick="applyKpiDrilldown('blocked')" title="Show blocked tickets">
+      <div class="label">Blocked</div>
+      <div class="val">${k.blocked}</div>
+      <div class="delta">${k.blocked > 0
+        ? `<span class="delta-bad">needs attention</span>`
+        : `<span class="delta-up">none blocked</span>`
+      }</div>
+    </div>
+    <div class="kpi green clickable" onclick="applyKpiDrilldown('doneThisMonth')" title="Show done tickets completed this month">
+      <div class="label">Done this month</div>
+      <div class="val">${k.doneThisMonth}</div>
+      <div class="delta">${doneChange}<br>${yearlyChange}</div>
+    </div>
+  </div>`;
+}
+
+function getDisplayColumns(columns) {
+  const configured = [...CONFIG.columns];
+  if (columns.Acceptance && !configured.includes('Acceptance')) {
+    const doneIdx = configured.indexOf(CONFIG.doneColumn);
+    if (doneIdx >= 0) configured.splice(doneIdx, 0, 'Acceptance');
+    else configured.push('Acceptance');
+  }
+  return configured;
+}
+
+function getStatusFilterOptions(open, displayColumns) {
+  const merged = new Set(displayColumns);
+  open.forEach((i) => merged.add(Metrics.getColumn(i)));
+  merged.add('Draft');
+  return [...merged].filter(Boolean);
+}
+
+function renderLeadStats(lt) {
+  const txt = (v) => (v === null || v === undefined ? '-' : `${v}d`);
+  return `
+    <div class="lead-stats">
+      <span class="lead-pill">P50 ${txt(lt.p50)}</span>
+      <span class="lead-pill">P75 ${txt(lt.p75)}</span>
+      <span class="lead-pill">P90 ${txt(lt.p90)}</span>
+      <span class="lead-pill">n=${lt.sampleSize}</span>
+    </div>`;
+}
+
+// ── RENDER BOARD ──
+function renderBoard(columns, displayColumns) {
+  const colCount = displayColumns.length;
+  const ticketsPerCol = 3;
+
+  const cols = displayColumns.map(colName => {
+    const tickets = columns[colName] || [];
+    const isInProgress = colName === CONFIG.inProgressColumn;
+    const isOver = isInProgress && CONFIG.wipLimit > 0 && tickets.length > CONFIG.wipLimit;
+
+    const ticketHTML = tickets.slice(0, ticketsPerCol).map(t => `
+      <div class="ticket${t.blocked ? ' blocked' : ''}">
+        <div class="ticket-id${t.blocked ? ' blocked-tag' : ''}">${t.id}${t.blocked ? ' · BLOCKED' : ''}</div>
+        <div class="ticket-title">${t.title}</div>
+        <div class="ticket-meta">
+          <span class="prio prio-${t.priority}">${t.priority}</span>
+          <span class="ticket-age ${agingClass(t.age)}">${t.age}d</span>
+        </div>
+      </div>`).join('');
+
+    const moreHTML = tickets.length > ticketsPerCol
+      ? `<div class="more-tickets">+${tickets.length - ticketsPerCol} more</div>`
+      : '';
+
+    return `
+      <div class="col">
+        <div class="col-header">
+          <span class="col-name">${colName}</span>
+          <span class="col-count ${isOver ? 'over' : ''}">${tickets.length}</span>
+        </div>
+        ${ticketHTML}
+        ${moreHTML}
+        ${tickets.length === 0 ? '<div class="more-tickets" style="color:var(--text3);">empty</div>' : ''}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="section-label">Live kanban board</div>
+    <div class="board" style="grid-template-columns: repeat(${colCount}, minmax(180px, 1fr));">
+      ${cols}
+    </div>`;
+}
+
+// ── RENDER AGING BARS ──
+function renderAging(aging) {
+  const maxDays = aging.length > 0 ? aging[0].age : 1;
+  const rows = aging.map(t => {
+    const pct = Math.round((t.age / Math.max(maxDays, 1)) * 100);
+    const color = agingColor(t.age);
+    return `
+      <div class="aging-row">
+        <span class="aging-id">${t.id}</span>
+        <div class="aging-bar-track">
+          <div class="aging-bar-fill" style="width:${pct}%;background:${color};"></div>
+        </div>
+        <span class="aging-days">${t.age}d</span>
+      </div>`;
+  }).join('');
+  return rows || '<p style="color:var(--text3);font-size:12px;">No aging tickets.</p>';
+}
+
+// ── RENDER INSIGHTS ──
+function renderInsights(ins) {
+  const colorMap = { danger: '#f87171', warn: '#fbbf24', good: '#34d399', info: '#4f8ef7' };
+  if (!ins.length) return '<p style="color:var(--text2);font-size:13px;">No insights yet — load more data.</p>';
+  return ins.map(i => `
+    <div class="insight-item">
+      <div class="insight-dot" style="background:${colorMap[i.level] || '#4f8ef7'};"></div>
+      <div class="insight-text">${i.text}</div>
+    </div>`).join('');
+}
+
+function renderLast24hUpdates(open, done) {
+  const cutoff = Date.now() - (24 * 60 * 60 * 1000);
+  const rows = [...open, ...done]
+    .map(i => ({
+      id: i.key,
+      title: i.fields.summary,
+      column: Metrics.getColumn(i),
+      priority: Metrics.getPriority(i),
+      updated: i.fields.updated,
+      updatedMs: new Date(i.fields.updated).getTime(),
+      blocked: Metrics.isBlocked(i),
+    }))
+    .filter(r => Number.isFinite(r.updatedMs) && r.updatedMs >= cutoff)
+    .sort((a, b) => b.updatedMs - a.updatedMs)
+    .slice(0, 20);
+
+  const body = rows.length === 0
+    ? '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px;">No ticket updates in the last 24 hours.</td></tr>'
+    : rows.map(r => {
+        const minsAgo = Math.max(0, Math.floor((Date.now() - r.updatedMs) / 60000));
+        const ageText = minsAgo < 60
+          ? `${minsAgo}m ago`
+          : `${Math.floor(minsAgo / 60)}h ago`;
+
+        return `
+          <tr>
+            <td class="td-id">${r.id}</td>
+            <td class="td-title">${r.title}</td>
+            <td><span class="status-pill ${statusPillClass(r.blocked ? 'blocked' : r.column)}">${r.blocked ? 'Blocked' : r.column}</span></td>
+            <td><span class="prio prio-${r.priority}">${r.priority}</span></td>
+            <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${ageText}</td>
+          </tr>`;
+      }).join('');
+
+  return `
+    <div class="table-card">
+      <div class="table-header">
+        <div class="section-label" style="margin-bottom:0;">Updated in last 24 hours (${rows.length})</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Summary</th><th>Status</th><th>Priority</th><th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${body}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderStaleInProgress(open) {
+  const cutoff = Date.now() - (24 * 60 * 60 * 1000);
+  const rows = open
+    .map(i => ({
+      id: i.key,
+      title: i.fields.summary,
+      column: Metrics.getColumn(i),
+      priority: Metrics.getPriority(i),
+      updated: i.fields.updated,
+      updatedMs: new Date(i.fields.updated).getTime(),
+      blocked: Metrics.isBlocked(i),
+    }))
+    .filter(r => r.column === CONFIG.inProgressColumn)
+    .filter(r => Number.isFinite(r.updatedMs) && r.updatedMs < cutoff)
+    .sort((a, b) => a.updatedMs - b.updatedMs);
+
+  const body = rows.length === 0
+    ? '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px;">All In Progress tickets were updated in the last 24 hours.</td></tr>'
+    : rows.map(r => {
+        const hours = Math.floor((Date.now() - r.updatedMs) / (60 * 60 * 1000));
+        const ageText = hours >= 48
+          ? `${Math.floor(hours / 24)}d ${hours % 24}h ago`
+          : `${hours}h ago`;
+
+        return `
+          <tr>
+            <td class="td-id">${r.id}</td>
+            <td class="td-title">${r.title}</td>
+            <td><span class="status-pill ${statusPillClass(r.blocked ? 'blocked' : r.column)}">${r.blocked ? 'Blocked' : r.column}</span></td>
+            <td><span class="prio prio-${r.priority}">${r.priority}</span></td>
+            <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${ageText}</td>
+          </tr>`;
+      }).join('');
+
+  return `
+    <div class="table-card">
+      <div class="table-header">
+        <div class="section-label" style="margin-bottom:0;">In Progress not updated in last 24 hours (${rows.length})</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Summary</th><th>Status</th><th>Priority</th><th>Last update</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${body}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ── RENDER TABLE ──
+function renderTable(open, filterStatus = 'all', filterPrio = 'all') {
+  let rows = open.map(i => ({
+    id: i.key,
+    title: i.fields.summary,
+    column: Metrics.getColumn(i),
+    priority: Metrics.getPriority(i),
+    type: Metrics.getType(i),
+    age: Metrics.ageInDays(i.fields.updated),
+    blocked: Metrics.isBlocked(i),
+  }));
+
+  if (filterStatus !== 'all') rows = rows.filter(r => r.column === filterStatus);
+  if (filterPrio !== 'all')   rows = rows.filter(r => r.priority === filterPrio);
+
+  if (!rows.length) return '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px;">No tickets match the filter.</td></tr>';
+
+  return rows.map(r => `
+    <tr>
+      <td class="td-id">${r.id}</td>
+      <td class="td-title">${r.title}</td>
+      <td><span class="status-pill ${statusPillClass(r.blocked ? 'blocked' : r.column)}">${r.blocked ? 'Blocked' : r.column}</span></td>
+      <td><span class="prio prio-${r.priority}">${r.priority}</span></td>
+      <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.type}</td>
+      <td style="font-family:var(--mono);font-size:10px;" class="${agingClass(r.age) ? 'delta-' + (r.age >= 14 ? 'bad' : 'warn') : ''}">${r.age}d</td>
+    </tr>`).join('');
+}
+
+function monthStart(d) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function getDrillData(mode) {
+  if (mode === 'doneThisMonth') {
+    const start = monthStart(new Date());
+    return _doneCache.filter((i) => {
+      const doneDate = Metrics.getDoneDate(i);
+      return doneDate && doneDate >= start;
+    });
+  }
+  return _openCache;
+}
+
+// ── CHARTS ──
+let chartInstances = {};
+
+function destroyCharts() {
+  Object.values(chartInstances).forEach(c => c.destroy());
+  chartInstances = {};
+}
+
+function renderCharts(open, done) {
+  destroyCharts();
+
+  // Throughput
+  const tp = Metrics.weeklyThroughput(done);
+  chartInstances.tp = new Chart(document.getElementById('thruChart'), {
+    type: 'bar',
+    data: {
+      labels: tp.labels,
+      datasets: [{
+        data: tp.data,
+        backgroundColor: tp.data.map((_, i) => i === tp.data.length - 1 ? '#4f8ef7' : 'rgba(79,142,247,0.35)'),
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" } } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" }, stepSize: 1 }, beginAtZero: true }
+      }
+    }
+  });
+
+  // Cycle time
+  const ct = Metrics.cycleTrend(done);
+  chartInstances.ct = new Chart(document.getElementById('cycleChart'), {
+    type: 'line',
+    data: {
+      labels: ct.labels,
+      datasets: [{
+        data: ct.data,
+        borderColor: '#a78bfa',
+        backgroundColor: 'rgba(167,139,250,0.08)',
+        tension: 0.4,
+        pointRadius: 5,
+        pointBackgroundColor: '#a78bfa',
+        pointBorderColor: '#0d0f14',
+        pointBorderWidth: 2,
+        fill: true,
+        spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" } } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" } }, beginAtZero: true }
+      }
+    }
+  });
+
+  // Priority donut
+  const prio = Metrics.priorityBreakdown(open);
+  chartInstances.prio = new Chart(document.getElementById('prioChart'), {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(prio),
+      datasets: [{
+        data: Object.values(prio),
+        backgroundColor: ['#f87171', '#fbbf24', '#4f8ef7', '#4a5060'],
+        borderWidth: 0,
+        hoverOffset: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      cutout: '68%',
+    }
+  });
+
+  // Lead time distribution
+  const lt = Metrics.leadTimeDistribution(done);
+  chartInstances.lt = new Chart(document.getElementById('leadChart'), {
+    type: 'bar',
+    data: {
+      labels: lt.labels,
+      datasets: [{
+        data: lt.data,
+        backgroundColor: ['rgba(79,142,247,0.35)', 'rgba(79,142,247,0.45)', 'rgba(79,142,247,0.55)', 'rgba(79,142,247,0.7)', '#4f8ef7'],
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" } } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" }, stepSize: 1 }, beginAtZero: true }
+      }
+    }
+  });
+
+  // CFD chart
+  const cfd = Metrics.cfdSeries(open, done, 10);
+  chartInstances.cfd = new Chart(document.getElementById('cfdChart'), {
+    type: 'line',
+    data: {
+      labels: cfd.labels,
+      datasets: [{
+        label: 'Done (cumulative)',
+        data: cfd.doneCum,
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(52,211,153,0.22)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        stack: 'flow',
+      }, {
+        label: 'WIP (in system)',
+        data: cfd.wip,
+        borderColor: '#fbbf24',
+        backgroundColor: 'rgba(251,191,36,0.16)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        stack: 'flow',
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#7c8394', boxWidth: 10, font: { size: 10, family: "'DM Mono'" } } } },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" } } },
+        y: { stacked: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#4a5060', font: { size: 10, family: "'DM Mono'" } }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+// ── MAIN RENDER ──
+function render(open, done) {
+  const kpiData    = Metrics.kpis(open, done);
+  // Filter done tickets to last 7 days for board display, keep full done for KPIs
+  const doneLastWeek = done.filter(i => {
+    const doneDate = Metrics.getDoneDate(i);
+    if (!doneDate) return false;
+    const daysSince = (Date.now() - doneDate.getTime()) / (1000 * 60 * 60 * 24);
+    return daysSince <= 7;
+  });
+  const columns    = Metrics.byColumn(open, doneLastWeek);
+  const displayColumns = getDisplayColumns(columns);
+  const statusFilterOptions = getStatusFilterOptions(open, displayColumns);
+  const aging      = Metrics.agingWip(open);
+  const insightArr = Metrics.insights(open, done, kpiData);
+  const prio       = Metrics.priorityBreakdown(open);
+  const leadStats  = Metrics.leadTimeDistribution(done);
+
+  const prioLegend = Object.entries(prio).map(([k, v]) => `
+    <div class="prio-legend-item">
+      <div class="prio-dot" style="background:${PRIO_COLORS[k]};"></div>
+      ${k} — ${v}
+    </div>`).join('');
+
+  document.getElementById('main').innerHTML = `
+    ${renderKpis(kpiData)}
+
+    ${renderBoard(columns, displayColumns)}
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Aging WIP — days in current status</div>
+        <div id="agingBars">${renderAging(aging)}</div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Weekly throughput</div>
+        <div style="position:relative;height:200px;"><canvas id="thruChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Cycle time trend — avg days</div>
+        <div style="position:relative;height:180px;"><canvas id="cycleChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Priority breakdown</div>
+        <div class="prio-wrap">
+          <div style="position:relative;height:160px;width:160px;flex-shrink:0;">
+            <canvas id="prioChart"></canvas>
+          </div>
+          <div class="prio-legend">${prioLegend}</div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Lead time distribution</div>
+        ${renderLeadStats(leadStats)}
+        <div style="position:relative;height:180px;"><canvas id="leadChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">CFD — done vs wip over time</div>
+        <div style="position:relative;height:180px;"><canvas id="cfdChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="insights-card">
+      <div class="section-label" style="margin-bottom:4px;">AI insights</div>
+      ${renderInsights(insightArr)}
+    </div>
+
+    ${renderLast24hUpdates(open, done)}
+
+    ${renderStaleInProgress(open)}
+
+    <div class="table-card">
+      <div class="table-header">
+        <div class="section-label" style="margin-bottom:0;" id="tableTitle">All open tickets (${open.length})</div>
+        <div class="table-filters">
+          <select id="filterStatus" onchange="applyFilter()">
+            <option value="all">All statuses</option>
+            ${statusFilterOptions.filter(c => c !== CONFIG.doneColumn).map(c => `<option value="${c}">${c}</option>`).join('')}
+          </select>
+          <select id="filterPrio" onchange="applyFilter()">
+            <option value="all">All priorities</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Summary</th><th>Status</th>
+            <th>Priority</th><th>Type</th><th>Age</th>
+          </tr>
+        </thead>
+        <tbody id="ticketTableBody">
+          ${renderTable(open)}
+        </tbody>
+      </table>
+    </div>`;
+
+  renderCharts(open, done);
+}
+
+// ── FILTER ──
+let _openCache = [];
+let _doneCache = [];
+let _drillMode = 'open';
+let _blockedOnly = false;
+
+function applyKpiDrilldown(mode) {
+  _drillMode = mode;
+  _blockedOnly = mode === 'blocked';
+
+  const statusEl = document.getElementById('filterStatus');
+  const prioEl = document.getElementById('filterPrio');
+
+  if (statusEl && mode === 'inProgress') statusEl.value = CONFIG.inProgressColumn;
+  if (statusEl && (mode === 'open' || mode === 'blocked' || mode === 'doneThisMonth')) statusEl.value = 'all';
+  if (prioEl) prioEl.value = 'all';
+
+  applyFilter();
+
+  const table = document.getElementById('ticketTableBody');
+  if (table) table.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function applyFilter() {
+  const status = document.getElementById('filterStatus')?.value || 'all';
+  const prio   = document.getElementById('filterPrio')?.value || 'all';
+  const source = getDrillData(_drillMode);
+  let tableHtml = renderTable(source, status, prio);
+
+  if (_blockedOnly) {
+    const rows = source
+      .filter((i) => Metrics.isBlocked(i))
+      .map((i) => ({
+        id: i.key,
+        title: i.fields.summary,
+        column: Metrics.getColumn(i),
+        priority: Metrics.getPriority(i),
+        type: Metrics.getType(i),
+        age: Metrics.ageInDays(i.fields.updated),
+        blocked: true,
+      }))
+      .filter((r) => status === 'all' ? true : r.column === status)
+      .filter((r) => prio === 'all' ? true : r.priority === prio);
+
+    tableHtml = rows.length
+      ? rows.map(r => `
+        <tr>
+          <td class="td-id">${r.id}</td>
+          <td class="td-title">${r.title}</td>
+          <td><span class="status-pill ${statusPillClass('blocked')}">Blocked</span></td>
+          <td><span class="prio prio-${r.priority}">${r.priority}</span></td>
+          <td style="font-family:var(--mono);font-size:10px;color:var(--text2);">${r.type}</td>
+          <td style="font-family:var(--mono);font-size:10px;" class="${agingClass(r.age) ? 'delta-' + (r.age >= 14 ? 'bad' : 'warn') : ''}">${r.age}d</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px;">No tickets match the filter.</td></tr>';
+  }
+
+  const titleEl = document.getElementById('tableTitle');
+  if (titleEl) {
+    if (_drillMode === 'doneThisMonth') titleEl.textContent = 'Done this month — drilldown';
+    else if (_drillMode === 'inProgress') titleEl.textContent = 'In Progress — drilldown';
+    else if (_drillMode === 'blocked') titleEl.textContent = 'Blocked tickets — drilldown';
+    else titleEl.textContent = `All open tickets (${_openCache.length})`;
+  }
+
+  document.getElementById('ticketTableBody').innerHTML = tableHtml;
+}
+
+// ── LOAD DATA ──
+async function loadData() {
+  document.getElementById('main').innerHTML = `
+    <div class="state-screen">
+      <div class="spinner"></div>
+      <p>Fetching your Jira tickets...</p>
+    </div>`;
+  document.getElementById('statusBadge').textContent = 'Loading';
+  document.getElementById('statusBadge').className = 'badge';
+  document.getElementById('footer').style.display = 'none';
+
+  // Validate config
+  if (CONFIG.apiToken === 'YOUR_API_TOKEN_HERE' || CONFIG.domain.includes('YOUR_DOMAIN')) {
+    showError(
+      'Please update your config.js with your Jira credentials.',
+      `domain: "yourcompany.atlassian.net"\nemail: "you@yourcompany.com"\napiToken: "your_token_here"\nprojectKeys: "PROJ"`
+    );
+    return;
+  }
+
+  try {
+    const [open, done] = await Promise.all([API.getOpenTickets(), API.getDoneTickets()]);
+    _openCache = open;
+    _doneCache = done;
+    _drillMode = 'open';
+    _blockedOnly = false;
+
+    const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('headerSub').textContent = `${CONFIG.projectKeys} · Last updated ${now}`;
+    document.getElementById('statusBadge').textContent = 'Live';
+    document.getElementById('statusBadge').className = 'badge live';
+    document.getElementById('footer').style.display = 'block';
+
+    render(open, done);
+    applyFilter();
+
+    if (CONFIG.autoRefreshMinutes > 0) {
+      setTimeout(loadData, CONFIG.autoRefreshMinutes * 60 * 1000);
+    }
+  } catch (err) {
+    if (err.message === 'AUTH_FAILED') {
+      showError('Authentication failed.', 'Check your email and API token in config.js.\nMake sure the token has Jira read permissions.');
+    } else if (err.message.includes('Connection timeout') || err.message.includes('ECONNRESET') || err.message.includes('ETIMEDOUT')) {
+      showError(
+        'Connection timeout to Jira.',
+        'The Jira API closed the connection (common with large data queries).\n\n1. Make sure proxy is running:\n   node proxy.js\n2. Check your internet connection\n3. Try reloading the page'
+      );
+    } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      showError(
+        'CORS blocked direct browser access to Jira.',
+        'Run the local proxy:\n  node proxy.js\n\nThen reload this page.'
+      );
+    } else {
+      showError(`Unexpected error: ${err.message}`);
+    }
+    console.error(err);
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>

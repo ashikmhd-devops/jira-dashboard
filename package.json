@@ -1,0 +1,14 @@
+{
+  "name": "jira-kanban-dashboard",
+  "version": "1.0.0",
+  "description": "Local Jira Kanban Dashboard with flow metrics",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "node proxy.js",
+    "dev": "node proxy.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
+  }
+}
