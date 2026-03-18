@@ -1,0 +1,7 @@
+node_modules/
+
+# Never commit credentials
+# Keep config.js & proxy.js in the repo but make sure apiToken stays as placeholder
+# Or use config.local.js (below) and gitignore it
+config.local.js
+.env
